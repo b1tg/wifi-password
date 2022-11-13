@@ -1,7 +1,7 @@
 # wifi-password
 
 
-获取系统上的 WIFI 密码
+获取系统上的 WIFI 密码, 目前支持 Windows 和 Ubuntu
 
 
 ```sh

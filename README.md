@@ -1,7 +1,7 @@
 # wifi-password
 
 
-get wifi password on your system
+get wifi password on your system, tested on Windows & Ubuntu
 
 
 ```sh
