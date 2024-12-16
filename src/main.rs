@@ -20,8 +20,10 @@ use encoding::all::GB18030;
 use encoding::{DecoderTrap, Encoding};
 use ini::Ini;
 use regex::Regex;
+use std::io::Write;
 use std::process::Command;
 use std::{fs, path::PathBuf};
+
 #[derive(Debug, Clone)]
 struct WifiConfig {
     ssid: String,
@@ -69,11 +71,16 @@ impl WifiConfig {
             .collect();
         for name in names {
             let output = run_command(&format!("netsh wlan show profiles name={} key=clear", name))?;
-            let re = Regex::new(r".*关键内容.*: (.+)$").unwrap();
+            let re_en = Regex::new(r".*Key Content.*: (.+)$").unwrap();
+            let re_zh = Regex::new(r".*关键内容.*: (.+)$").unwrap();
             let passwords: Vec<&str> = output
                 .split("\r\n")
                 .filter_map(|x| {
-                    let captures = re.captures(x)?;
+                    let captures = re_en.captures(x)?;
+                    if let Some(name) = captures.get(1) {
+                        return Some(name.as_str());
+                    }
+                    let captures = re_zh.captures(x)?;
                     if let Some(name) = captures.get(1) {
                         return Some(name.as_str());
                     }
@@ -114,12 +121,17 @@ fn test_win() {
 }
 #[cfg(target_os = "windows")]
 fn main() {
+    use std::io::Read;
+
     println!("[*] searching WIFI info");
     if let Some(entries) = WifiConfig::fetch_win() {
         for entry in entries {
             println!("{}: {}", entry.ssid, entry.password);
         }
     }
+    print!("Press Enter to continue...");
+    std::io::stdout().flush().unwrap();
+    std::io::stdin().read(&mut [0u8]).unwrap();
     println!("[*] searching over, bye");
 }
 #[cfg(target_os = "linux")]
