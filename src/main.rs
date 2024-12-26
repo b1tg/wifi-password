@@ -1,21 +1,3 @@
-// sudo cat /etc/NetworkManager/system-connections/aaa.nmconnection
-// [connection]
-// id=aaa
-// uuid=<xxx>
-// type=wifi
-// interface-name=wlo1
-// permissions=
-
-// [wifi]
-// mac-address-blacklist=
-// mode=infrastructure
-// ssid=aaa
-
-// [wifi-security]
-// auth-alg=open
-// key-mgmt=wpa-psk
-// psk=testabc
-
 use encoding::all::GB18030;
 use encoding::{DecoderTrap, Encoding};
 use ini::Ini;
@@ -33,7 +15,31 @@ struct WifiConfig {
 }
 
 impl WifiConfig {
-    fn init(entry_path: PathBuf) -> Option<Self> {
+    fn init_from_netplan(entry_path: PathBuf) -> Option<Self> {
+        let filename = entry_path.file_name()?.to_str()?;
+        let content = fs::read_to_string(&entry_path).expect("try sudo");
+        let mut ssid = "".to_string();
+        let mut psk = "".to_string();
+        for line in content.lines() {
+            if line.starts_with("            name") {
+                ssid = line[19..line.len() - 1].to_string();
+            }
+            if line.starts_with("            password: ") {
+                psk = line[23..line.len() - 1].to_string();
+            }
+        }
+        if ssid.is_empty() {
+            return None;
+        }
+
+        Some(WifiConfig {
+            ssid: ssid.to_owned(),
+            uuid: "".to_owned(),
+            password: psk.to_owned(),
+            fname: filename.to_owned(),
+        })
+    }
+    fn init_from_nm(entry_path: PathBuf) -> Option<Self> {
         let filename = entry_path.file_name()?.to_str()?;
         let nmconnection = Ini::load_from_file(&entry_path).ok()?;
         let mut ssid = nmconnection.section(Some("wifi"))?.get("ssid")?;
@@ -55,7 +61,7 @@ impl WifiConfig {
     }
     // netsh wlan show profiles
     // netsh wlan show profiles name=wifi1 key=clear
-    fn fetch_win() -> Option<Vec<WifiConfig>> {
+    fn init_from_netsh() -> Option<Vec<WifiConfig>> {
         let mut results = vec![];
         let output = run_command("netsh wlan show profiles")?;
         let re = Regex::new(r".*: (.+)$").unwrap();
@@ -117,7 +123,7 @@ fn test_run_command() {
 }
 #[test]
 fn test_win() {
-    WifiConfig::fetch_win();
+    WifiConfig::init_from_netsh();
 }
 #[cfg(target_os = "windows")]
 fn main() {
@@ -137,10 +143,55 @@ fn main() {
 #[cfg(target_os = "linux")]
 fn main() {
     let system_connections_dir = "/etc/NetworkManager/system-connections/";
-    println!("[*] searching WIFI info in {} ...", system_connections_dir);
-    for entry in fs::read_dir(system_connections_dir).expect("read dir error") {
+    if let Ok(o) = fs::exists(system_connections_dir) {
+        if o {
+            println!("[*] searching WIFI info in {} ...", system_connections_dir);
+            for entry in fs::read_dir(system_connections_dir).expect("read dir error") {
+                let entry_path = entry.unwrap().path();
+                if let Some(wifi_config) = WifiConfig::init_from_nm(entry_path) {
+                    println!(
+                        "{}: {}",
+                        wifi_config.ssid,
+                        if wifi_config.password.is_empty() {
+                            "<EMPTY>"
+                        } else {
+                            &wifi_config.password
+                        }
+                    );
+                }
+            }
+        }
+    }
+    let netplan_dir = "/etc/netplan/";
+    if let Ok(o) = fs::exists(system_connections_dir) {
+        if o {
+            println!("[*] searching WIFI info in {} ...", netplan_dir);
+            for entry in fs::read_dir(netplan_dir).expect("read dir error") {
+                let entry_path = entry.unwrap().path();
+                if let Some(wifi_config) = WifiConfig::init_from_netplan(entry_path) {
+                    println!(
+                        "{}: {}",
+                        wifi_config.ssid,
+                        if wifi_config.password.is_empty() {
+                            "<EMPTY>"
+                        } else {
+                            &wifi_config.password
+                        }
+                    );
+                }
+            }
+        }
+    }
+    println!("[*] searching over, bye");
+}
+// /etc/netplan/90-NM-56ffe0d9-aaf8-48ce-8c05-f108689d03ba.yaml
+#[test]
+fn test_netplan() {
+    let netplan_dir = "/etc/netplan/";
+    println!("[*] searching WIFI info in {} ...", netplan_dir);
+    for entry in fs::read_dir(netplan_dir).expect("read dir error") {
         let entry_path = entry.unwrap().path();
-        if let Some(wifi_config) = WifiConfig::init(entry_path) {
+        if let Some(wifi_config) = WifiConfig::init_from_netplan(entry_path) {
             println!(
                 "{}: {}",
                 wifi_config.ssid,
